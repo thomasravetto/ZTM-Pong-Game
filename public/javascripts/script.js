@@ -1,7 +1,8 @@
 // Canvas Related
 const canvas = document.createElement('canvas');
 const context = canvas.getContext('2d');
-const socket = io('http://localhost:3000');
+const socket = io('/pong');
+let isReferee = false;
 let paddleIndex = 0;
 
 let width = 500;
@@ -22,7 +23,7 @@ let ballRadius = 5;
 let ballDirection = 1;
 
 // Speed
-let speedY = 2;
+let speedY = 5;
 let speedX = 0;
 
 // Score for Both Players
@@ -88,7 +89,13 @@ function renderCanvas() {
 function ballReset() {
   ballX = width / 2;
   ballY = height / 2;
-  speedY = 3;
+  speedY = 10;
+
+  socket.emit('ballMove', {
+    ballX,
+    ballY,
+    score
+  })
 }
 
 // Adjust Ball Movement
@@ -99,6 +106,12 @@ function ballMove() {
   if (playerMoved) {
     ballX += speedX;
   }
+
+  socket.emit('ballMove', {
+    ballX,
+    ballY,
+    score
+  })
 }
 
 // Determine What Ball Bounces Off, Score Points, Reset Ball
@@ -155,18 +168,23 @@ function ballBoundaries() {
 
 // Called Every Frame
 function animate() {
-  ballMove();
+  if (isReferee) {
+    ballMove();
+    ballBoundaries();
+  }
   renderCanvas();
-  ballBoundaries();
   window.requestAnimationFrame(animate);
 }
 
-// Start Game, Reset Everything
-function startGame() {
+// Load Game, Reset Everything
+function loadGame() {
   createCanvas();
   renderIntro();
-  
-  paddleIndex = 0;
+  socket.emit('ready')
+}
+
+function startGame() {
+  paddleIndex = isReferee ? 0 : 1;
   window.requestAnimationFrame(animate);
   canvas.addEventListener('mousemove', (e) => {
     playerMoved = true;
@@ -177,11 +195,35 @@ function startGame() {
     if (paddleX[paddleIndex] > (width - paddleWidth)) {
       paddleX[paddleIndex] = width - paddleWidth;
     }
+
+    socket.emit('paddleMove', {
+      xPosition: paddleX[paddleIndex],
+    })
+
     // Hide Cursor
     canvas.style.cursor = 'none';
   });
 }
 
 // On Load
-startGame();
+loadGame();
 
+socket.on('connect', () => {
+  console.log('Connected as...', socket.id)
+})
+
+socket.on('startGame', (refereeId) => {
+  console.log('Referee', refereeId)
+
+  isReferee = socket.id === refereeId;
+  startGame();
+});
+
+socket.on('paddleMove', (paddleData) => {
+  const opponentPaddleIndex = 1 - paddleIndex; // Toggle 1 in to 0 and viceversa
+  paddleX[opponentPaddleIndex] = paddleData.xPosition;
+})
+
+socket.on('ballMove', (ballData) => {
+  ({ ballX, ballY, score } = ballData);
+})
